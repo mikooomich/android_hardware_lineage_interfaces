@@ -52,7 +52,8 @@ extern bool setDeviceSpecificMode(Mode type, bool enabled);
 
 Power::Power()
     : mInteractionHandler(nullptr),
-      mSustainedPerfModeOn(false) {
+      mSustainedPerfModeOn(false),
+      mBatterySaverOn(false) {
     mInteractionHandler = std::make_unique<InteractionHandler>();
     mInteractionHandler->Init();
 
@@ -81,6 +82,13 @@ Power::Power()
     LOG(INFO) << "PowerHAL InterfaceVersion:" << mServiceVersion << " isOK: " << status.isOk();
 }
 
+static void endAllHints() {
+    std::shared_ptr<HintManager> hm = HintManager::GetInstance();
+    for (auto hint : hm->GetHints()) {
+        hm->EndHint(hint);
+    }
+}
+
 ndk::ScopedAStatus Power::setMode(Mode type, bool enabled) {
     LOG(DEBUG) << "Power setMode: " << toString(type) << " to: " << enabled;
     if (HintManager::GetInstance()->IsAdpfSupported()) {
@@ -96,6 +104,15 @@ ndk::ScopedAStatus Power::setMode(Mode type, bool enabled) {
                 HintManager::GetInstance()->DoHint("SUSTAINED_PERFORMANCE");
             }
             mSustainedPerfModeOn = true;
+            break;
+        case Mode::LOW_POWER:
+            if (enabled) {
+                endAllHints();
+                HintManager::GetInstance()->DoHint("LOW_POWER");
+            } else {
+                HintManager::GetInstance()->EndHint("LOW_POWER");
+            }
+            mBatterySaverOn = enabled;
             break;
         case Mode::LAUNCH:
             if (mSustainedPerfModeOn) {
@@ -119,6 +136,7 @@ ndk::ScopedAStatus Power::setMode(Mode type, bool enabled) {
         case Mode::GAME_LOADING:
             [[fallthrough]];
         default:
+            if (mBatterySaverOn) break;
             if (enabled) {
                 HintManager::GetInstance()->DoHint(toString(type));
             } else {
@@ -156,7 +174,7 @@ ndk::ScopedAStatus Power::isModeSupported(Mode type, bool *_aidl_return) {
             *_aidl_return = false;
             return ndk::ScopedAStatus::ok();
     }
-    bool supported = HintManager::GetInstance()->IsHintSupported(toString(type));
+    bool supported = type == Mode::LOW_POWER || HintManager::GetInstance()->IsHintSupported(toString(type));
     if (!supported && HintManager::GetInstance()->IsAdpfProfileSupported(toString(type))) {
         supported = true;
     }
@@ -169,7 +187,7 @@ ndk::ScopedAStatus Power::setBoost(Boost type, int32_t durationMs) {
     LOG(DEBUG) << "Power setBoost: " << toString(type) << " duration: " << durationMs;
     switch (type) {
         case Boost::INTERACTION:
-            if (mSustainedPerfModeOn) {
+            if (mSustainedPerfModeOn || mBatterySaverOn) {
                 break;
             }
             mInteractionHandler->Acquire(durationMs);
@@ -181,7 +199,7 @@ ndk::ScopedAStatus Power::setBoost(Boost type, int32_t durationMs) {
         case Boost::AUDIO_LAUNCH:
             [[fallthrough]];
         default:
-            if (mSustainedPerfModeOn) {
+            if (mSustainedPerfModeOn || mBatterySaverOn) {
                 break;
             }
             if (durationMs > 0) {
@@ -232,9 +250,11 @@ constexpr const char *boolToString(bool b) {
 binder_status_t Power::dump(int fd, const char **, uint32_t) {
     std::string buf(::android::base::StringPrintf(
             "HintManager Running: %s\n"
-            "SustainedPerformanceMode: %s\n",
+            "SustainedPerformanceMode: %s\n"
+            "BatterySaverMode: %s\n",
             boolToString(HintManager::GetInstance()->IsRunning()),
-            boolToString(mSustainedPerfModeOn)));
+            boolToString(mSustainedPerfModeOn),
+            boolToString(mBatterySaverOn)));
     // Dump nodes through libperfmgr
     HintManager::GetInstance()->DumpToFd(fd);
     PowerSessionManager<>::getInstance()->dumpToFd(fd);
