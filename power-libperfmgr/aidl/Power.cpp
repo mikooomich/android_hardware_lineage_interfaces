@@ -101,9 +101,12 @@ ndk::ScopedAStatus Power::setMode(Mode type, bool enabled) {
     switch (type) {
         case Mode::SUSTAINED_PERFORMANCE:
             if (enabled) {
+                endAllHints();
                 HintManager::GetInstance()->DoHint("SUSTAINED_PERFORMANCE");
+            } else {
+                HintManager::GetInstance()->EndHint("SUSTAINED_PERFORMANCE");
             }
-            mSustainedPerfModeOn = true;
+            mSustainedPerfModeOn = enabled;
             break;
         case Mode::LOW_POWER:
             if (enabled) {
@@ -115,9 +118,6 @@ ndk::ScopedAStatus Power::setMode(Mode type, bool enabled) {
             mBatterySaverOn = enabled;
             break;
         case Mode::LAUNCH:
-            if (mSustainedPerfModeOn) {
-                break;
-            }
             [[fallthrough]];
         case Mode::DOUBLE_TAP_TO_WAKE:
             [[fallthrough]];
@@ -136,7 +136,9 @@ ndk::ScopedAStatus Power::setMode(Mode type, bool enabled) {
         case Mode::GAME_LOADING:
             [[fallthrough]];
         default:
-            if (mBatterySaverOn) break;
+            if (mBatterySaverOn || mSustainedPerfModeOn) {
+                break;
+            }
             if (enabled) {
                 HintManager::GetInstance()->DoHint(toString(type));
             } else {
