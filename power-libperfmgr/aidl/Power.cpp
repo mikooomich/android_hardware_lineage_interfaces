@@ -52,7 +52,6 @@ extern bool setDeviceSpecificMode(Mode type, bool enabled);
 
 static const std::vector<Mode> kAlwaysAllowedModes = {
     Mode::DOUBLE_TAP_TO_WAKE,
-    Mode::INTERACTIVE,
     Mode::DEVICE_IDLE,
     Mode::DISPLAY_INACTIVE,
 };
